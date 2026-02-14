@@ -1,0 +1,70 @@
+# CustomResourceDefinition for Prompt (loom). Apply with: kubectl apply -f deploy/prompt-crd.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: prompts.loom.klejdi94.github.com
+spec:
+  group: loom.klejdi94.github.com
+  names:
+    kind: Prompt
+    listKind: PromptList
+    plural: prompts
+    singular: prompt
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Prompt ID (defaults to metadata.name)
+                version:
+                  type: string
+                  description: Semantic version (e.g. 1.0.0)
+                name:
+                  type: string
+                description:
+                  type: string
+                system:
+                  type: string
+                  description: System message template
+                template:
+                  type: string
+                  description: User message template (Go text/template)
+                variables:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      type:
+                        type: string
+                        enum: [string, int, float, bool, any]
+                      required:
+                        type: boolean
+                      description:
+                        type: string
+                stage:
+                  type: string
+                  enum: [dev, staging, production]
+                  description: Deployment stage (default dev)
+            status:
+              type: object
+              properties:
+                synced:
+                  type: boolean
+                lastSyncTime:
+                  type: string
+                  format: date-time
+                message:
+                  type: string
+      subresources:
+        status: {}

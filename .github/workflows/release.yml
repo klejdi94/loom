@@ -1,0 +1,69 @@
+# Create GitHub Release when you push a tag v* (e.g. git tag v1.0.0 && git push origin v1.0.0).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        run: go test -v ./...
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          export VERSION=${{ steps.version.outputs.version }}
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o dist/loom-cli-linux-amd64 ./cmd/loom
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o dist/loom-cli-darwin-amd64 ./cmd/loom
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o dist/loom-cli-darwin-arm64 ./cmd/loom
+          GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o dist/loom-cli-windows-amd64.exe ./cmd/loom
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## loom ${{ steps.version.outputs.version }}
+            Production-ready Go library for managing, testing, and versioning LLM prompts.
+            **Install:** `go get github.com/klejdi94/loom@${{ steps.version.outputs.version }}`
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

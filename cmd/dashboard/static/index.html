@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loom Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --bg: #0f0f12; --card: #18181c; --text: #e4e4e7; --muted: #71717a; --accent: #a78bfa; --success: #22c55e; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; }
+    h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card { background: var(--card); border-radius: 8px; padding: 1rem; }
+    .card h2 { font-size: 0.9rem; color: var(--muted); margin: 0 0 0.5rem; font-weight: 600; }
+    .chart-wrap { position: relative; height: 240px; }
+    .api-base { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+  <p class="api-base">API: <span id="api-base">__API_BASE__</span></p>
+  <h1>Loom Analytics</h1>
+  <div class="cards">
+    <div class="card">
+      <h2>Runs over time</h2>
+      <div class="chart-wrap"><canvas id="chartRuns"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Success rate by prompt</h2>
+      <div class="chart-wrap"><canvas id="chartSuccess"></canvas></div>
+    </div>
+  </div>
+
+  <script>
+    window.ANALYTICS_API = '__API_BASE__';
+    document.getElementById('api-base').textContent = window.ANALYTICS_API;
+
+    function getQuery(from, to, groupBy, limit) {
+      let url = window.ANALYTICS_API + '/aggregates?group_by=' + (groupBy || 'day') + '&limit=' + (limit || 100);
+      if (from) url += '&from=' + from;
+      if (to) url += '&to=' + to;
+      return url;
+    }
+
+    async function fetchAggregates(from, to, groupBy, limit) {
+      const r = await fetch(getQuery(from, to, groupBy, limit));
+      if (!r.ok) throw new Error(r.statusText);
+      const data = await r.json();
+      return data.aggregates || [];
+    }
+
+    function lastDays(d) {
+      const t = new Date();
+      t.setDate(t.getDate() - d);
+      return t.toISOString().slice(0, 10) + 'T00:00:00Z';
+    }
+
+    (async function() {
+      const from = lastDays(30);
+      const to = new Date().toISOString();
+
+      let runsData = [], successData = [];
+      try {
+        runsData = await fetchAggregates(from, to, 'day', 31);
+        successData = await fetchAggregates(from, to, 'prompt', 20);
+      } catch (e) {
+        document.body.appendChild(document.createElement('p')).textContent = 'Failed to load: ' + e.message;
+        return;
+      }
+
+      new Chart(document.getElementById('chartRuns'), {
+        type: 'bar',
+        data: {
+          labels: runsData.map(a => a.key),
+          datasets: [{ label: 'Runs', data: runsData.map(a => a.runs), backgroundColor: 'rgba(167, 139, 250, 0.6)' }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+
+      new Chart(document.getElementById('chartSuccess'), {
+        type: 'bar',
+        data: {
+          labels: successData.map(a => a.key),
+          datasets: [{
+            label: 'Success rate',
+            data: successData.map(a => a.runs ? (100 * a.success_count / a.runs) : 0),
+            backgroundColor: 'rgba(34, 197, 94, 0.6)'
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 100 } } }
+      });
+    })();
+  </script>
+</body>
+</html>
