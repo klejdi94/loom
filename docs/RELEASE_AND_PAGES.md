@@ -13,7 +13,7 @@
 
 1. In the repo: **Settings** → **Pages**.
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-3. The **Pages** workflow runs on every push to `main` (or `master`) and deploys the contents of the `docs/` folder.
+3. The **Pages** workflow runs on every push to `master` and deploys the contents of the `docs/` folder.
 4. After the first successful run, the site is available at **https://klejdi94.github.io/loom**.
 
 To trigger Pages manually: **Actions** → **Pages** → **Run workflow**.
