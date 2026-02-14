@@ -39,10 +39,53 @@ func main() {
 
 - **Prompt**: Versioned template with system message, user template, variables, and few-shot examples.
 - **Template**: Go `text/template` syntax with custom functions; variable interpolation and validation.
-- **Registry**: In-memory, file-based, or PostgreSQL; versioning and promotion.
+- **Registry**: In-memory, file-based, PostgreSQL, or Redis; versioning and promotion.
 - **Provider**: OpenAI, Ollama, Anthropic, Google Gemini, Cerebras, Cohere; unified interface.
 - **Executor**: Run a prompt against a provider with retry and timeout.
 - **Evaluator**: Test suites and evaluators (exact match, contains, similarity/cosine, LLM judge, custom) for regression and quality.
+
+## How it works
+
+End-to-end flow from defining prompts to observing runs:
+
+```mermaid
+flowchart LR
+    subgraph Define
+        A[Prompt ID + Version] --> B[Store]
+    end
+    subgraph Registry
+        B --> C[(Postgres)]
+        B --> D[(Redis)]
+        C --> E[Promote]
+        D --> E
+        E --> F[GetProduction]
+    end
+    subgraph Run
+        F --> G[Execute]
+        G --> H[Provider]
+        H --> I[LLM]
+        I --> J[Record]
+    end
+    subgraph Analytics
+        J --> K[(Postgres)]
+        J --> L[(Redis)]
+        K --> M[Dashboard]
+        L --> M
+    end
+```
+
+| Step | What happens |
+|------|----------------|
+| **Define** | Build a versioned prompt (ID, version, system, template, variables). |
+| **Store** | Save to a **registry** (Postgres, Redis, file, or memory). |
+| **Promote** | Mark a version as production (dev → staging → production). |
+| **GetProduction** | Load the current production prompt from the registry. |
+| **Execute** | Render the prompt, call a **provider** (OpenAI, Cerebras, etc.), get completion. |
+| **Record** | Send run metrics (prompt_id, version, latency, tokens, success) to **analytics**. |
+| **Analytics** | Persist in **Postgres** or **Redis**; query aggregates by prompt, version, or day. |
+| **Dashboard** | HTTP UI that calls the analytics API and shows charts (runs over time, success by prompt/version). |
+
+A longer flow design with the same diagram is in [docs/flow.md](docs/flow.md).
 
 ## Project structure
 
@@ -50,7 +93,7 @@ func main() {
 loom/
 ├── core/           # Prompt, Variable, Example, interfaces
 ├── template/       # Template rendering engine
-├── registry/       # Memory, file, PostgreSQL
+├── registry/       # Memory, file, PostgreSQL, Redis, S3
 ├── provider/       # OpenAI, Ollama
 ├── executor/       # Execute with retry
 ├── evaluator/      # Test suites and evaluators
@@ -83,7 +126,7 @@ prompt := loom.New("my-prompt").
     Build(loom.DefaultEngine())
 ```
 
-### Registry (memory, file, or PostgreSQL)
+### Registry (memory, file, PostgreSQL, or Redis)
 
 ```go
 // In-memory
@@ -96,10 +139,37 @@ reg, _ := registry.NewFileRegistry("./.loom")
 db, _ := sql.Open("postgres", dsn)
 reg, _ := registry.NewPostgresRegistry(db, "prompts", true)
 
+// Redis (go get github.com/redis/go-redis/v9) – distributed, same interface
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+reg := registry.NewRedisRegistry(rdb, "loom:prompts")
+
 reg.Store(ctx, prompt)
 reg.Promote(ctx, "my-prompt", "1.2.0", registry.StageProduction)
 prod, _ := reg.GetProduction(ctx, "my-prompt")
 ```
+
+### Analytics with Postgres or Redis
+
+Persistent run history so the analytics server (and dashboard) survive restarts:
+
+```go
+// PostgreSQL – same DB as registry or a dedicated DB
+db, _ := sql.Open("postgres", analyticsDSN)
+store, _ := analytics.NewPostgresStore(db, "prompt_runs")
+
+// Redis – sorted set by timestamp
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+store := analytics.NewRedisStore(rdb, "loom:analytics:runs")
+
+// Record each run (e.g. from your app or executor middleware)
+store.Record(ctx, analytics.RunRecord{
+    PromptID: "summarizer", Version: "1.0.0", LatencyMs: 120, Success: true, ...
+})
+// Query aggregates (by prompt, version, or day)
+agg, _ := store.Query(ctx, analytics.Query{GroupBy: "version", Limit: 20})
+```
+
+Run the analytics server with Postgres or Redis: `go run ./cmd/analytics-server -store=postgres -dsn=...` or `-store=redis -redis=localhost:6379`. Dashboard: `go run ./cmd/dashboard -api=http://localhost:8080`.
 
 ### Execute with OpenAI
 
@@ -195,11 +265,14 @@ echo '{"id":"p1","version":"1.0.0","template":"Hi {{.name}}"}' | ./loom store
 - `examples/basic` – Build and render a prompt
 - `examples/registry` – Store and retrieve with in-memory registry
 - `examples/evaluate` – Run a test suite
+- `examples/realworld-cerebras` – **Full 360**: Postgres registry, versioned prompts, promote, Cerebras, analytics, dashboard (see [examples/realworld-cerebras/README.md](examples/realworld-cerebras/README.md); requires `docker compose up` for Postgres + analytics)
 
 Run an example:
 
 ```bash
 cd loom/examples/basic && go run .
+# Full flow with Postgres + analytics (start Postgres first: docker compose up -d)
+cd examples/realworld-cerebras && go run .
 ```
 
 ## Requirements

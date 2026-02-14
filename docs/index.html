@@ -5,20 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>loom – LLM prompt engineering for Go</title>
   <meta name="description" content="Production-ready Go library for managing, testing, optimizing, and versioning prompts for Large Language Models. Type-safe, performant, provider-agnostic.">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     :root { --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --border: #30363d; }
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; line-height: 1.6; max-width: 720px; margin-left: auto; margin-right: auto; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; line-height: 1.6; max-width: 800px; margin-left: auto; margin-right: auto; }
     h1 { font-size: 2rem; margin: 0 0 0.5rem; }
+    h2 { font-size: 1.35rem; margin: 2rem 0 0.75rem; }
     .tagline { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     code { background: var(--card); padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
-    pre { background: var(--card); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+    pre { background: var(--card); padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); font-size: 0.85rem; }
     pre code { background: none; padding: 0; }
     .btn { display: inline-block; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 6px; margin-top: 0.5rem; }
     .btn:hover { opacity: 0.9; text-decoration: none; }
     ul { color: var(--muted); }
+    .mermaid { background: var(--card); padding: 1rem; border-radius: 8px; border: 1px solid var(--border); margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -27,6 +33,43 @@
 
   <h2>Install</h2>
   <pre><code>go get github.com/klejdi94/loom</code></pre>
+
+  <h2>How it works</h2>
+  <p>End-to-end flow: define versioned prompts → store in <strong>Postgres or Redis</strong> → promote → run via provider → record to <strong>analytics (Postgres/Redis)</strong> → view on dashboard.</p>
+  <div class="mermaid">
+flowchart LR
+    subgraph Define
+        A[Prompt + Version] --> B[Store]
+    end
+    subgraph Registry
+        B --> C[(Postgres)]
+        B --> D[(Redis)]
+        C --> E[Promote]
+        D --> E
+        E --> F[GetProduction]
+    end
+    subgraph Run
+        F --> G[Execute]
+        G --> H[Provider]
+        H --> I[LLM]
+        I --> J[Record]
+    end
+    subgraph Analytics
+        J --> K[(Postgres)]
+        J --> L[(Redis)]
+        K --> M[Dashboard]
+        L --> M
+    end
+  </div>
+  <table>
+    <tr><th>Step</th><th>What happens</th></tr>
+    <tr><td>Define</td><td>Build prompt (ID, version, system, template, variables).</td></tr>
+    <tr><td>Store</td><td>Registry: Postgres, Redis, file, or memory.</td></tr>
+    <tr><td>Promote</td><td>Mark a version as production.</td></tr>
+    <tr><td>Execute</td><td>Load production prompt, call provider (OpenAI, Cerebras, etc.).</td></tr>
+    <tr><td>Record</td><td>Analytics: persist run (prompt_id, version, latency, success) in Postgres or Redis.</td></tr>
+    <tr><td>Dashboard</td><td>Charts: runs over time, success rate by prompt/version.</td></tr>
+  </table>
 
   <h2>Quick start</h2>
   <pre><code>engine := loom.DefaultEngine()
@@ -38,15 +81,40 @@ prompt := loom.New("my-prompt").
 
 result, _ := prompt.Render(ctx, loom.Input{"question": "What is 2+2?"})</code></pre>
 
+  <h2>Registry: Postgres and Redis</h2>
+  <pre><code>// PostgreSQL
+db, _ := sql.Open("postgres", dsn)
+reg, _ := registry.NewPostgresRegistry(db, "prompts", true)
+
+// Redis
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+reg := registry.NewRedisRegistry(rdb, "loom:prompts")
+
+reg.Store(ctx, prompt)
+reg.Promote(ctx, "my-prompt", "1.2.0", registry.StageProduction)
+prod, _ := reg.GetProduction(ctx, "my-prompt")</code></pre>
+
+  <h2>Analytics: Postgres and Redis</h2>
+  <pre><code>// Persistent run history (survives restarts)
+// Postgres
+store, _ := analytics.NewPostgresStore(db, "prompt_runs")
+
+// Redis
+store := analytics.NewRedisStore(rdb, "loom:analytics:runs")
+
+// Server: go run ./cmd/analytics-server -store=postgres -dsn=...
+// Dashboard: go run ./cmd/dashboard -api=http://localhost:8080</code></pre>
+
   <h2>Features</h2>
   <ul>
     <li>Versioning, promotion (dev → staging → production), rollback, A/B testing</li>
     <li>Providers: OpenAI, Ollama, Anthropic, Google Gemini, Cerebras, Cohere</li>
-    <li>Registries: in-memory, file, PostgreSQL, Redis, S3</li>
+    <li>Registries: in-memory, file, <strong>PostgreSQL</strong>, <strong>Redis</strong>, S3</li>
     <li>Evaluators: exact match, contains, similarity (embeddings), LLM-as-judge</li>
-    <li>Analytics (in-memory, Postgres, Redis) and dashboard UI</li>
+    <li>Analytics: in-memory, <strong>Postgres</strong>, <strong>Redis</strong> + dashboard UI</li>
   </ul>
 
-  <a href="https://github.com/klejdi94/loom" class="btn">View on GitHub</a>
+  <p><a href="https://github.com/klejdi94/loom" class="btn">View on GitHub</a> &nbsp; <a href="https://github.com/klejdi94/loom/blob/master/README.md">Full README &amp; examples</a> &nbsp; <a href="https://github.com/klejdi94/loom/blob/master/docs/flow.md">Flow design</a></p>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
 </body>
 </html>
