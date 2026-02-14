@@ -36,12 +36,12 @@ type Query struct {
 
 // Aggregate is a bucketed aggregate (e.g. per prompt or per day).
 type Aggregate struct {
-	Key          string  // e.g. prompt id or "2024-01-15"
-	Runs         int64
-	SuccessCount int64
-	AvgLatencyMs float64
-	TotalInputTokens  int64
-	TotalOutputTokens int64
+	Key               string  `json:"key"`
+	Runs              int64   `json:"runs"`
+	SuccessCount      int64   `json:"success_count"`
+	AvgLatencyMs      float64 `json:"avg_latency_ms"`
+	TotalInputTokens  int64   `json:"total_input_tokens"`
+	TotalOutputTokens int64   `json:"total_output_tokens"`
 }
 
 // MemoryStore is an in-memory implementation (bounded slice, no persistence).

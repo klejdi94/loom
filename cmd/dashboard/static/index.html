@@ -29,6 +29,10 @@
       <h2>Success rate by prompt</h2>
       <div class="chart-wrap"><canvas id="chartSuccess"></canvas></div>
     </div>
+    <div class="card">
+      <h2>Success rate by version (prompt@version)</h2>
+      <div class="chart-wrap"><canvas id="chartVersion"></canvas></div>
+    </div>
   </div>
 
   <script>
@@ -59,20 +63,26 @@
       const from = lastDays(30);
       const to = new Date().toISOString();
 
-      let runsData = [], successData = [];
+      let runsData = [], successData = [], versionData = [];
       try {
         runsData = await fetchAggregates(from, to, 'day', 31);
         successData = await fetchAggregates(from, to, 'prompt', 20);
+        versionData = await fetchAggregates(from, to, 'version', 20);
       } catch (e) {
         document.body.appendChild(document.createElement('p')).textContent = 'Failed to load: ' + e.message;
         return;
       }
 
+      // Support both lowercase (API with json tags) and capitalized (legacy) keys
+      function key(a) { return a.key !== undefined ? a.key : a.Key; }
+      function runs(a) { return a.runs !== undefined ? a.runs : a.Runs; }
+      function successCount(a) { return a.success_count !== undefined ? a.success_count : a.SuccessCount; }
+
       new Chart(document.getElementById('chartRuns'), {
         type: 'bar',
         data: {
-          labels: runsData.map(a => a.key),
-          datasets: [{ label: 'Runs', data: runsData.map(a => a.runs), backgroundColor: 'rgba(167, 139, 250, 0.6)' }]
+          labels: runsData.length ? runsData.map(key) : ['No data'],
+          datasets: [{ label: 'Runs', data: runsData.length ? runsData.map(runs) : [0], backgroundColor: 'rgba(167, 139, 250, 0.6)' }]
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
       });
@@ -80,11 +90,24 @@
       new Chart(document.getElementById('chartSuccess'), {
         type: 'bar',
         data: {
-          labels: successData.map(a => a.key),
+          labels: successData.length ? successData.map(key) : ['No data'],
           datasets: [{
             label: 'Success rate',
-            data: successData.map(a => a.runs ? (100 * a.success_count / a.runs) : 0),
+            data: successData.length ? successData.map(a => { const r = runs(a); return r ? (100 * successCount(a) / r) : 0; }) : [0],
             backgroundColor: 'rgba(34, 197, 94, 0.6)'
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 100 } } }
+      });
+
+      new Chart(document.getElementById('chartVersion'), {
+        type: 'bar',
+        data: {
+          labels: versionData.length ? versionData.map(key) : ['No data'],
+          datasets: [{
+            label: 'Success rate',
+            data: versionData.length ? versionData.map(a => { const r = runs(a); return r ? (100 * successCount(a) / r) : 0; }) : [0],
+            backgroundColor: 'rgba(59, 130, 246, 0.6)'
           }]
         },
         options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, max: 100 } } }
