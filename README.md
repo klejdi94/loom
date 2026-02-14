@@ -280,28 +280,4 @@ cd examples/realworld-cerebras && go run .
 - Go 1.21+
 - For OpenAI: set `OPENAI_API_KEY` when using the OpenAI provider
 
-## Phase 3 (advanced)
 
-- **Redis registry**: `registry.NewRedisRegistry(redisClient, "prefix")` – distributed storage (go get github.com/redis/go-redis/v9).
-- **LLM-as-judge**: `evaluator.LLMJudge{Provider: openai, Model: "gpt-4o-mini", Criteria: "..."}` – use an LLM to score actual vs expected.
-- **Analytics**: `analytics.NewMemoryStore(max)` (in-memory), `analytics.NewPostgresStore(db, table)` or `analytics.NewRedisStore(redisClient, key)` for persistent history; record runs and query aggregates (by prompt, version, day).
-- **S3 registry**: `registry.NewS3Registry(store, "prefix")` with `registry.BlobStore`; use `registry/s3blob` for AWS S3 (go get github.com/aws/aws-sdk-go-v2/config, service/s3).
-- **Auto-promotion**: `experiment.WithOnWinner(func(name string, p *core.Prompt) { reg.Promote(ctx, p.ID, p.Version, registry.StageProduction) })` – when a winner is detected, promote in one place.
-
-## Phase 4 (analytics API & Kubernetes)
-
-- **Analytics HTTP server**: `analytics.NewServer(store, ":8080")` – `POST /record`, `GET /aggregates`, `GET /health`. Run with `go run ./cmd/analytics-server` (optional `-addr`, `-store=memory|postgres|redis`, `-dsn`, `-redis`). **Dashboard**: `go run ./cmd/dashboard` (optional `-addr=:8081`, `-api=http://localhost:8080`) – HTML/JS UI with charts (runs over time, success rate by prompt).
-- **Kubernetes operator**: Prompt CRD (`deploy/prompt-crd.yaml`) and controller that syncs Prompt CRs into a registry. Build and run `./cmd/prompt-operator`. See `docs/k8s.md`.
-
-## Roadmap
-
-- **Phases 1–4 (done)**: Core, template, registries (memory, file, PostgreSQL, Redis, S3), OpenAI + Ollama + Anthropic + Gemini + Cerebras + Cohere, executor, evaluator (exact, contains, similarity, LLM judge), chains, middleware, A/B + auto-promotion, cost tracking, CLI, analytics (memory/Postgres/Redis), analytics HTTP API, dashboard UI, Kubernetes CRD + operator
-- **Future**: More embedding providers for similarity evaluator
-
-## License
-
-Open source – use your preferred license (MIT recommended).
-
-## Contributing
-
-Contributions welcome: issues, docs, and PRs. Please run tests and `golangci-lint` before submitting.
